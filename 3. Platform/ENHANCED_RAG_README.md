@@ -9,27 +9,32 @@ This system replaces the previous sentence-transformers implementation with Open
 ## Key Features
 
 ### 🎯 High-Quality Embeddings
+
 - Uses OpenAI's `text-embedding-3-small` model (1536 dimensions)
 - Superior semantic understanding compared to local models
 - Normalized vectors for optimal cosine similarity
 
 ### 📚 Smart Document Processing
+
 - Intelligent chunking with overlap for context preservation
 - Automatic section title extraction from markdown headers
 - Token-aware chunking (800 tokens per chunk, 100 token overlap)
 - Metadata preservation for accurate source referencing
 
 ### 🔍 Advanced Retrieval
+
 - FAISS-based vector search with cosine similarity
 - Proper source attribution with file paths and sections
 - Relevance scoring for result ranking
 
 ### ⚡ Performance Optimizations
+
 - Intelligent caching system (documents hash-based)
 - Batch processing for embedding creation
 - Automatic cache invalidation when documents change
 
 ### 📝 Accurate Citations
+
 - Automatic source citations in responses
 - File path and section title preservation
 - Multi-chunk document handling
@@ -76,6 +81,7 @@ The system uses the following configuration (adjustable in `enhanced_rag.py`):
 ## System Architecture
 
 ### Document Processing Pipeline
+
 1. **Document Loading**: Loads all `.md` files from the specified directory
 2. **Chunking**: Intelligently splits documents into overlapping chunks
 3. **Metadata Extraction**: Preserves file paths, section titles, and position information
@@ -83,6 +89,7 @@ The system uses the following configuration (adjustable in `enhanced_rag.py`):
 5. **Index Building**: Creates FAISS index for fast similarity search
 
 ### Retrieval Pipeline
+
 1. **Query Embedding**: Converts user query to embedding vector
 2. **Similarity Search**: Finds most relevant chunks using cosine similarity
 3. **Context Assembly**: Combines retrieved chunks with source information
@@ -91,6 +98,7 @@ The system uses the following configuration (adjustable in `enhanced_rag.py`):
 ## Data Structure
 
 ### DocumentChunk
+
 ```python
 @dataclass
 class DocumentChunk:
@@ -104,6 +112,7 @@ class DocumentChunk:
 ```
 
 ### RetrievalResult
+
 ```python
 @dataclass
 class RetrievalResult:
@@ -131,13 +140,15 @@ python-dotenv>=1.1.0
 ## Environment Setup
 
 Ensure your `.env` file contains:
+
 ```
-GREENPT_API_KEY=your_greenpt_api_key_here
+GREENPT_API_KEY=sk--kufFCXhR9OHR-avU_TFF6mc9qDD8ktNjXhRbycSjJU
 ```
 
 ## Cache Management
 
 The system automatically manages embeddings cache:
+
 - **Location**: `./cache/embeddings_cache.pkl`
 - **Validation**: Uses document hash for cache validation
 - **Invalidation**: Automatic when documents change
@@ -155,6 +166,7 @@ The system automatically manages embeddings cache:
 ## Testing
 
 Run the test suite:
+
 ```bash
 python test_enhanced_rag.py
 ```
