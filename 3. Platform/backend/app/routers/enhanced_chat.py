@@ -12,6 +12,7 @@ from app.models.ai_responses import (
     TechnicalGuidance, ErrorResponse, AIResponseFormat
 )
 from app.services.enhanced_openai_service import EnhancedOpenAIService
+from app.services.n8n_validation_service import N8NValidationService
 
 router = APIRouter()
 

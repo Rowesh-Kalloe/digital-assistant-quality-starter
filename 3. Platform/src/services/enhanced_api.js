@@ -43,7 +43,7 @@ export const enhancedAPI = {
           userContext.customContext
       }
 
-      const response = await api.post('/api/chat/structured', {
+      const response = await api.post('/api/chat/validated', {
         message: message.trim(),
         context: mappedContext,
         timestamp: new Date().toISOString()
