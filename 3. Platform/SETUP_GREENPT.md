@@ -11,19 +11,22 @@ Je GreenPT API key wordt verstrekt door de hackathon organisatie. Vraag deze aan
 ### 2. Configureer de API Key
 
 1. Kopieer de `.env.example` file naar `.env`:
+
 ```bash
 cd backend
 cp .env.example .env
 ```
 
 2. Open `backend/.env` en vul je GreenPT key in:
+
 ```bash
-GREENPT_API_KEY=your_greenpt_api_key_here
+GREENPT_API_KEY=sk--kufFCXhR9OHR-avU_TFF6mc9qDD8ktNjXhRbycSjJU
 ```
 
 ### 3. Zet Demo Mode Uit
 
 In dezelfde `.env` file, verander:
+
 ```bash
 DEMO_MODE=false
 ```
@@ -47,12 +50,13 @@ Voor demonstratie en development kun je de app gebruiken zonder echte GreenPT AP
 ```bash
 # In .env file:
 DEMO_MODE=true
-GREENPT_API_KEY=your_greenpt_api_key_here  # Mag placeholder blijven
+GREENPT_API_KEY=sk--kufFCXhR9OHR-avU_TFF6mc9qDD8ktNjXhRbycSjJU  # Mag placeholder blijven
 ```
 
 **Demo Features:**
+
 - ✅ Volledig werkende UI/UX
-- ✅ Knowledge base zoeken (189 documenten)  
+- ✅ Knowledge base zoeken (189 documenten)
 - ✅ Structured response templates
 - ✅ Compliance en technical guidance demos
 - ❌ Geen echte AI responses
@@ -81,15 +85,18 @@ curl -X POST http://localhost:8000/api/chat/structured \
 ## 🆘 Troubleshooting
 
 ### "Invalid API key" Error
+
 - Check of je key correct is gekopieerd
 - Zorg dat er geen extra spaties zijn
 - Vraag de hackathon organisatie om een nieuwe key
 
-### "Model not found" Error  
+### "Model not found" Error
+
 - Controleer of het model beschikbaar is via GreenPT
 - Pas `GREENPT_MODEL` aan in je `.env` file
 
 ### Verbindingsproblemen
+
 - Controleer je internetverbinding
 - Vraag de hackathon organisatie of de GreenPT service actief is
 
