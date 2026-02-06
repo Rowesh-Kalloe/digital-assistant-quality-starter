@@ -25,7 +25,8 @@ def get_openai_client():
         api_key = os.getenv('GREENPT_API_KEY')
         if not api_key:
             raise ValueError("GREENPT_API_KEY environment variable not set")
-        client = OpenAI(api_key=api_key)
+        base_url = os.getenv('GREENPT_API_BASE', 'https://api.greenpt.ai/v1')
+        client = OpenAI(api_key=api_key, base_url=base_url)
     return client
 
 # Configuration

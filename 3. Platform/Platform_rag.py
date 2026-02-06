@@ -12,7 +12,7 @@ load_dotenv()
 
 # Retrieve GreenPT API key (OpenAI-compatible)
 openai.api_key = os.getenv('GREENPT_API_KEY')
-client = OpenAI(api_key=os.getenv('GREENPT_API_KEY'))
+client = OpenAI(api_key=os.getenv('GREENPT_API_KEY'), base_url=os.getenv('GREENPT_API_BASE', 'https://api.greenpt.ai/v1'))
 
 # Load the sentence transformer model
 model = SentenceTransformer('all-MiniLM-L6-v2')

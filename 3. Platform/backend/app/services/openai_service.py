@@ -14,7 +14,8 @@ class OpenAIService:
         if not api_key:
             raise ValueError("GREENPT_API_KEY environment variable is required")
         
-        self.client = AsyncOpenAI(api_key=api_key)
+        base_url = os.getenv("GREENPT_API_BASE", "https://api.greenpt.ai/v1")
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = os.getenv("GREENPT_MODEL", "gpt-4-1106-preview")
         self.max_tokens = int(os.getenv("GREENPT_MAX_TOKENS", "1500"))
         self.temperature = float(os.getenv("GREENPT_TEMPERATURE", "0.7"))

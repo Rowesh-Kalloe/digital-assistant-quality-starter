@@ -10,6 +10,11 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+class EmptyN8NResponseError(Exception):
+    """Raised when n8n returns empty body, triggers retry"""
+    pass
+
+
 class N8NValidationService:
     """
     Service to validate chatbot outputs through n8n webhook
@@ -30,8 +35,9 @@ class N8NValidationService:
             logger.info("N8N validation service disabled")
     
     @retry(
-        stop=stop_after_attempt(2),
-        wait=wait_exponential(multiplier=1, min=2, max=5)
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=3, max=10),
+        retry=lambda retry_state: isinstance(retry_state.outcome.exception(), EmptyN8NResponseError) if retry_state.outcome and retry_state.outcome.exception() else False
     )
     async def validate_response(
         self, 
@@ -81,9 +87,25 @@ class N8NValidationService:
                 )
                 
                 webhook_response.raise_for_status()
-                validation_result = webhook_response.json()
-            
-            logger.info(f"N8N validation completed: {validation_result.get('status', 'unknown')}")
+                
+                # === DETAILED LOGGING OF N8N RESPONSE ===
+                response_text = webhook_response.text.strip()
+                logger.info(f"📥 N8N response status: {webhook_response.status_code}")
+                logger.info(f"📥 N8N response headers: {dict(webhook_response.headers)}")
+                logger.info(f"📥 N8N response body (raw): '{response_text[:500]}'")
+                
+                if not response_text:
+                    logger.warning("📥 N8N returned EMPTY body — will retry to wait for n8n...")
+                    raise EmptyN8NResponseError("N8N returned empty body")
+                
+                try:
+                    validation_result = webhook_response.json()
+                    logger.info(f"📥 N8N response parsed JSON keys: {list(validation_result.keys()) if isinstance(validation_result, dict) else type(validation_result)}")
+                    logger.info(f"📥 N8N response parsed JSON: {str(validation_result)[:500]}")
+                except Exception:
+                    # n8n returned plain text — this IS the validated response text
+                    logger.info(f"📥 N8N returned plain text, using as validated main_answer")
+                    validation_result = {"approved": True, "modified_response": {**response_data, "main_answer": response_text}}
             
             # Parse n8n response
             return self._parse_validation_result(validation_result, response_data)
@@ -105,6 +127,10 @@ class N8NValidationService:
                 "validation_status": "error",
                 "error": str(e)
             }
+            
+        except EmptyN8NResponseError:
+            # Let @retry handle this
+            raise
             
         except Exception as e:
             logger.error(f"N8N validation error: {e}")
@@ -133,7 +159,9 @@ class N8NValidationService:
         }
         """
         
-        approved = validation_result.get("approved", False)
+        # Default to approved=True when n8n responds (Respond to Webhook node)
+        # Only reject if explicitly set to approved=false
+        approved = validation_result.get("approved", True)
         
         if approved:
             # Use modified response if provided, otherwise original

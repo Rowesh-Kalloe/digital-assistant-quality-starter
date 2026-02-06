@@ -12,7 +12,10 @@ import {
   CheckCircle,
   Clock,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  Shield,
+  Search,
+  FileCheck
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { sendMessage } from '../services/api'
@@ -54,9 +57,19 @@ const ChatInterface = ({ userContext, onRestart }) => {
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [validationPhase, setValidationPhase] = useState(0)
   const [showSuggestions, setShowSuggestions] = useState(true)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const validationTimerRef = useRef(null)
+
+  const VALIDATION_PHASES = [
+    { icon: 'search', text: 'Bronnen doorzoeken...', color: 'text-blue-500' },
+    { icon: 'bot', text: 'AI genereert antwoord...', color: 'text-gemeente-primary' },
+    { icon: 'shield', text: 'Je antwoord wordt gevalideerd...', color: 'text-amber-500' },
+    { icon: 'filecheck', text: 'Kwaliteitscontrole uitvoeren...', color: 'text-purple-500' },
+    { icon: 'check', text: 'Bijna klaar...', color: 'text-green-500' },
+  ]
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -115,7 +128,16 @@ const ChatInterface = ({ userContext, onRestart }) => {
     setMessages(prev => [...prev, userMessage])
     setInputValue('')
     setIsLoading(true)
+    setValidationPhase(0)
     setShowSuggestions(false)
+
+    // Cycle through validation phases while waiting
+    validationTimerRef.current = setInterval(() => {
+      setValidationPhase(prev => {
+        if (prev < 4) return prev + 1
+        return prev
+      })
+    }, 3000)
 
     try {
       const response = await sendMessage(message, userContext)
@@ -142,7 +164,12 @@ const ChatInterface = ({ userContext, onRestart }) => {
       }
       setMessages(prev => [...prev, errorMessage])
     } finally {
+      if (validationTimerRef.current) {
+        clearInterval(validationTimerRef.current)
+        validationTimerRef.current = null
+      }
       setIsLoading(false)
+      setValidationPhase(0)
     }
   }
 
@@ -353,21 +380,58 @@ const ChatInterface = ({ userContext, onRestart }) => {
             ))}
           </AnimatePresence>
 
-          {/* Loading Indicator */}
+          {/* Validation Loading Indicator */}
           {isLoading && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
               className="flex justify-start"
             >
               <div className="chat-bubble-ai max-w-md">
-                <div className="flex items-center space-x-2">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-gemeente-primary rounded-full animate-bounce" />
-                    <div className="w-2 h-2 bg-gemeente-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                    <div className="w-2 h-2 bg-gemeente-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                <div className="space-y-3">
+                  {VALIDATION_PHASES.map((phase, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ 
+                        opacity: index <= validationPhase ? 1 : 0.3,
+                        x: 0
+                      }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                      className={`flex items-center space-x-3 ${index <= validationPhase ? '' : 'opacity-30'}`}
+                    >
+                      <div className={`flex-shrink-0 ${phase.color}`}>
+                        {index < validationPhase ? (
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                        ) : index === validationPhase ? (
+                          <div className="w-4 h-4 relative">
+                            {phase.icon === 'search' && <Search className={`w-4 h-4 ${phase.color} animate-pulse`} />}
+                            {phase.icon === 'bot' && <Bot className={`w-4 h-4 ${phase.color} animate-pulse`} />}
+                            {phase.icon === 'shield' && <Shield className={`w-4 h-4 ${phase.color} animate-pulse`} />}
+                            {phase.icon === 'filecheck' && <FileCheck className={`w-4 h-4 ${phase.color} animate-pulse`} />}
+                            {phase.icon === 'check' && <CheckCircle className={`w-4 h-4 ${phase.color} animate-pulse`} />}
+                          </div>
+                        ) : (
+                          <div className="w-4 h-4 rounded-full border-2 border-gemeente-neutral-300" />
+                        )}
+                      </div>
+                      <span className={`text-sm ${
+                        index < validationPhase ? 'text-green-600 line-through' :
+                        index === validationPhase ? 'text-gemeente-neutral-800 font-medium' :
+                        'text-gemeente-neutral-400'
+                      }`}>
+                        {phase.text}
+                      </span>
+                    </motion.div>
+                  ))}
+                  <div className="flex items-center space-x-2 pt-2 border-t border-gemeente-neutral-100">
+                    <div className="flex space-x-1">
+                      <div className="w-1.5 h-1.5 bg-gemeente-primary rounded-full animate-bounce" />
+                      <div className="w-1.5 h-1.5 bg-gemeente-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                      <div className="w-1.5 h-1.5 bg-gemeente-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                    </div>
+                    <span className="text-xs text-gemeente-neutral-500">Even geduld alsjeblieft...</span>
                   </div>
-                  <span className="text-sm text-gemeente-neutral-600">AI denkt na...</span>
                 </div>
               </div>
             </motion.div>

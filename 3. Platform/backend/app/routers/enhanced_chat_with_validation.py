@@ -1,135 +1,146 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from loguru import logger
+import json
 import time
+import uuid
 from datetime import datetime
-from typing import Union
+from typing import Union, Dict, Any
 from pydantic import ValidationError
 
-from app.models.chat import ChatMessage, FeedbackRequest, ExpertContact
-from app.models.ai_responses import (
-    StructuredAIResponse, QuickAnswer, ComplianceAnalysis, 
-    TechnicalGuidance, ErrorResponse, AIResponseFormat
-)
+from app.models.chat import ChatMessage
+from app.models.ai_responses import StructuredAIResponse
 from app.services.enhanced_openai_service import EnhancedOpenAIService
 from app.services.n8n_validation_service import N8NValidationService
 
 router = APIRouter()
 
+
 def get_enhanced_openai_service(request: Request) -> EnhancedOpenAIService:
-    """Dependency to get Enhanced OpenAI service from app state"""
     return request.app.state.enhanced_openai_service
 
 def get_n8n_validation_service(request: Request) -> N8NValidationService:
-    """Dependency to get N8N validation service from app state"""
     return request.app.state.n8n_validation_service
+
+
+def _serialize_response(structured_response) -> dict:
+    """Convert a Pydantic model to a JSON-safe dict (handles enums)"""
+    if hasattr(structured_response, 'model_dump'):
+        return structured_response.model_dump(mode='json')
+    elif hasattr(structured_response, 'dict'):
+        raw = structured_response.dict()
+    else:
+        raw = structured_response.__dict__
+
+    def _convert(obj):
+        if isinstance(obj, dict):
+            return {k: _convert(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [_convert(v) for v in obj]
+        elif hasattr(obj, 'value'):
+            return obj.value
+        return obj
+
+    return _convert(raw)
+
 
 @router.post("/chat/validated")
 async def validated_chat_endpoint(
     request: Request,
     openai_service: EnhancedOpenAIService = Depends(get_enhanced_openai_service),
     n8n_service: N8NValidationService = Depends(get_n8n_validation_service)
-) -> Union[StructuredAIResponse, QuickAnswer, ComplianceAnalysis, TechnicalGuidance, ErrorResponse]:
+):
     """
-    Enhanced chat endpoint with n8n validation layer
-    AI responses are validated through n8n webhook before delivery to user
+    Synchronous chat endpoint with n8n validation.
+    1. Generate AI response
+    2. Send to n8n webhook (fire-and-forget)
+    3. Return the AI response directly to the frontend
     """
     start_time = time.time()
-    
+    request_id = str(uuid.uuid4())
+
     try:
-        # Parse and validate request body
         body = await request.json()
-        logger.info(f"Received validated chat request: {body.get('message', '')[:100]}...")
-        
+        logger.info(f"[{request_id}] Received: {body.get('message', '')[:100]}")
+
         try:
             chat_message = ChatMessage(**body)
         except ValidationError as ve:
-            logger.error(f"Validation error: {ve}")
-            raise HTTPException(
-                status_code=422,
-                detail=f"Validation error: {ve}"
-            )
-        
-        logger.info(f"Processing chat message from {chat_message.context.role}: {chat_message.message[:100]}...")
-        
-        # Validate message length
+            raise HTTPException(status_code=422, detail=str(ve))
+
         if len(chat_message.message) > 2000:
-            raise HTTPException(
-                status_code=400,
-                detail="Bericht is te lang. Maximaal 2000 karakters toegestaan."
-            )
-        
+            raise HTTPException(status_code=400, detail="Bericht is te lang (max 2000).")
+
         # STEP 1: Generate AI response
-        logger.info("Generating AI response...")
+        logger.info(f"[{request_id}] Generating AI response...")
         structured_response = await openai_service.generate_structured_response(chat_message)
-        ai_generation_time = time.time() - start_time
-        logger.info(f"AI response generated in {ai_generation_time:.2f}s")
-        
-        # STEP 2: SECURITY LAYER - Validate through n8n before user sees it
-        logger.info("🔒 Sending response to n8n validation layer...")
-        validation_start = time.time()
-        
-        # Convert response to dict for n8n
-        response_dict = structured_response.dict() if hasattr(structured_response, 'dict') else structured_response.__dict__
-        
-        validation_result = await n8n_service.validate_response(
-            response_data=response_dict,
-            user_context={
-                "role": chat_message.context.role.value if chat_message.context.role else None,
-                "roleName": chat_message.context.roleName,
-                "projectPhase": chat_message.context.projectPhase,
-                "message": chat_message.message,
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-        
-        validation_time = time.time() - validation_start
-        logger.info(f"✅ Validation completed in {validation_time:.2f}s, status: {validation_result.get('validation_status')}")
-        
-        # STEP 3: Handle validation result
-        if validation_result.get("validation_status") == "rejected":
-            logger.warning(f"⚠️ Response REJECTED by n8n: {validation_result.get('rejection_reason')}")
-            logger.warning(f"Security flags: {validation_result.get('security_flags', [])}")
-            
-            # Return safe fallback response
-            return ErrorResponse(
-                error_type="validation_error",
-                error_message=validation_result["response"].get("message", "Deze vraag vereist extra verificatie door een expert."),
-                technical_details=f"Rejected: {validation_result.get('rejection_reason')}",
-                suggested_action="Neem contact op met een expert voor meer informatie over dit onderwerp.",
-                needs_human_help=True
-            )
-        
-        # STEP 4: Use validated/modified response
-        final_response = validation_result.get("response", structured_response)
-        was_modified = validation_result.get("was_modified", False)
-        
-        if was_modified:
-            logger.info("📝 Response was modified by n8n validation layer")
-        
-        # Reconstruct proper response type if modified
-        if was_modified and isinstance(final_response, dict):
+        elapsed = time.time() - start_time
+        logger.info(f"[{request_id}] AI response generated in {elapsed:.2f}s")
+
+        # STEP 2: Serialize to JSON-safe dict
+        response_dict = _serialize_response(structured_response)
+        logger.info(f"[{request_id}] main_answer[:80]: {str(response_dict.get('main_answer', 'MISSING'))[:80]}")
+
+        # STEP 3: Send to n8n and WAIT for response
+        final_response = response_dict  # default: use original AI response
+
+        if n8n_service.enabled:
             try:
-                response_type = type(structured_response)
-                final_response = response_type(**final_response)
-                logger.info(f"Reconstructed {response_type.__name__} from modified response")
+                user_context = {
+                    "role": chat_message.context.role.value if chat_message.context.role else None,
+                    "message": chat_message.message,
+                    "timestamp": datetime.now().isoformat()
+                }
+                logger.info(f"[{request_id}] Sending to n8n and waiting for response...")
+                n8n_result = await n8n_service.validate_response(
+                    response_data={**response_dict, "request_id": request_id},
+                    user_context=user_context
+                )
+                
+                validation_status = n8n_result.get("validation_status", "unknown")
+                logger.info(f"[{request_id}] n8n validation_status: {validation_status}")
+                logger.info(f"[{request_id}] n8n full result keys: {list(n8n_result.keys())}")
+                
+                if validation_status == "approved" and "response" in n8n_result:
+                    # n8n sent back a validated/modified response — USE IT
+                    final_response = n8n_result["response"]
+                    logger.info(f"[{request_id}] ✅ Using n8n validated response")
+                elif validation_status == "rejected":
+                    final_response = {
+                        "main_answer": n8n_result.get("rejection_reason", "Dit antwoord is afgekeurd door validatie."),
+                        "confidence_level": "low",
+                        "knowledge_sources": [],
+                        "follow_up_suggestions": [],
+                        "needs_human_expert": True
+                    }
+                    logger.warning(f"[{request_id}] ⚠️ Response rejected by n8n")
+                else:
+                    # sent/error/timeout/unknown — use original AI response
+                    logger.info(f"[{request_id}] Using original AI response (n8n status: {validation_status})")
+                    
             except Exception as e:
-                logger.warning(f"Could not reconstruct response type: {e}, returning dict")
-        
-        total_time = time.time() - start_time
-        logger.info(f"✨ Total processing time: {total_time:.2f}s (AI: {ai_generation_time:.2f}s, Validation: {validation_time:.2f}s)")
-        logger.info(f"Validation metadata: validated={validation_result.get('validated')}, modified={was_modified}")
-        
-        return final_response
-        
+                logger.error(f"[{request_id}] n8n failed: {e} — using original AI response")
+
+        # STEP 4: Return the final response to frontend
+        logger.info(f"[{request_id}] Returning to frontend. main_answer[:80]: {str(final_response.get('main_answer', 'MISSING'))[:80]}")
+
+        # Safety check: ensure JSON-serializable
+        try:
+            json.dumps(final_response)
+        except (TypeError, ValueError) as e:
+            logger.error(f"[{request_id}] Not JSON-serializable: {e}")
+            final_response = {
+                "main_answer": str(final_response.get("main_answer", "Er ging iets mis.")),
+                "confidence_level": "medium",
+                "knowledge_sources": [],
+                "follow_up_suggestions": [],
+                "needs_human_expert": False
+            }
+
+        return JSONResponse(content=final_response)
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in validated chat endpoint: {e}", exc_info=True)
-        return ErrorResponse(
-            error_type="api_error",
-            error_message="Er ging iets mis bij het verwerken van je bericht. Probeer het opnieuw.",
-            technical_details=str(e),
-            suggested_action="Probeer je vraag opnieuw te formuleren of neem contact op met een expert.",
-            needs_human_help=True
-        )
+        logger.error(f"[{request_id}] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Er ging iets mis bij het verwerken van je bericht.")
